@@ -9,6 +9,9 @@
 #include "audio_common_msgs/AudioDataStamped.h"
 #include "audio_common_msgs/AudioInfo.h"
 
+std::vector<uint8_t> _data_buffer;
+int _data_buffer_length;
+
 namespace audio_transport
 {
   class RosGstCapture
@@ -17,7 +20,7 @@ namespace audio_transport
       RosGstCapture()
       {
         _bitrate = 192;
-
+        
         std::string dst_type;
 
         // Need to encoding or publish raw wave data
@@ -39,6 +42,10 @@ namespace audio_transport
         //ros::param::param<std::string>("~src", source_type, "alsasrc");
         std::string device;
         ros::param::param<std::string>("~device", device, "");
+
+        // wjc added
+        ros::param::param<int>("~pub_frequency", _pub_frequency, 60);
+        _data_buffer_length = 1.0 / _pub_frequency * _sample_rate * _channels * 2;
 
         _pub = _nh.advertise<audio_common_msgs::AudioData>("audio", 10, true);
         _pub_stamped = _nh.advertise<audio_common_msgs::AudioDataStamped>("audio_stamped", 10, true);
@@ -63,6 +70,16 @@ namespace audio_transport
           _sink = gst_element_factory_make("appsink", "sink");
           g_object_set(G_OBJECT(_sink), "emit-signals", true, NULL);
           g_object_set(G_OBJECT(_sink), "max-buffers", 100, NULL);
+
+          // //控制发布频率 *** 这个ChatGPT搜出来的方法不行
+          // float pub_frequency = 1;
+          // float blocksize_float = 1 / pub_frequency * _sample_rate * _channels * 2;
+          // int blocksize = static_cast<int>(blocksize_float);
+          // g_object_set(G_OBJECT(_sink), "blocksize", blocksize, NULL);
+          // gint current_blocksize;
+          // g_object_get(G_OBJECT(_sink), "blocksize", &current_blocksize, NULL);
+          // ROS_INFO_STREAM("Blocksize: " << current_blocksize);
+          
           g_signal_connect( G_OBJECT(_sink), "new-sample",
                             G_CALLBACK(onNewBuffer), this);
         }
@@ -115,12 +132,23 @@ namespace audio_transport
           g_object_set( G_OBJECT(_encode), "bitrate", _bitrate, NULL);
 
           gst_bin_add_many( GST_BIN(_pipeline), _source, _filter, _convert, _encode, _sink, NULL);
+
           link_ok = gst_element_link_many(_source, _filter, _convert, _encode, _sink, NULL);
         } else if (_format == "wave") {
           if (dst_type == "appsink") {
             g_object_set( G_OBJECT(_sink), "caps", caps, NULL);
             gst_caps_unref(caps);
             gst_bin_add_many( GST_BIN(_pipeline), _source, _sink, NULL);
+
+            // //控制发布频率 *** 这个ChatGPT搜出来的方法不行
+            // float pub_frequency = 1;
+            // float blocksize_float = 1 / pub_frequency * _sample_rate * _channels * 2;
+            // int blocksize = static_cast<int>(blocksize_float);
+            // g_object_set(G_OBJECT(_sink), "blocksize", blocksize, NULL);
+            // gint current_blocksize;
+            // g_object_get(G_OBJECT(_sink), "blocksize", &current_blocksize, NULL);
+            // ROS_INFO_STREAM("Blocksize: " << current_blocksize);
+
             link_ok = gst_element_link_many( _source, _sink, NULL);
           } else {
             _filter = gst_element_factory_make("wavenc", "filter");
@@ -147,7 +175,7 @@ namespace audio_transport
           ROS_ERROR_STREAM("Unsupported media type.");
           exitOnMainThread(1);
         }
-
+        
         gst_element_set_state(GST_ELEMENT(_pipeline), GST_STATE_PLAYING);
 
         _gst_thread = boost::thread( boost::bind(g_main_loop_run, _loop) );
@@ -184,11 +212,57 @@ namespace audio_transport
         _pub_stamped.publish(msg);
       }
 
+      // static GstFlowReturn onNewBuffer (GstAppSink *appsink, gpointer userData)
+      // {
+      //   RosGstCapture *server = reinterpret_cast<RosGstCapture*>(userData);
+      //   GstMapInfo map;
+
+      //   GstSample *sample;
+      //   g_signal_emit_by_name(appsink, "pull-sample", &sample);
+
+      //   GstBuffer *buffer = gst_sample_get_buffer(sample);
+
+      //   gst_buffer_map(buffer, &map, GST_MAP_READ);
+
+      //   _data_buffer.insert(_data_buffer.end(), map.data, map.data + map.size);
+        
+      //   // msg.data.resize( map.size );
+
+      //   // memcpy( &msg.data[0], map.data, map.size );
+      //   // stamped_msg.audio = msg;
+
+      //   gst_buffer_unmap(buffer, &map);
+      //   gst_sample_unref(sample);
+        
+
+      //   if (_data_buffer.size() == _data_buffer_length)
+      //   {
+      //     audio_common_msgs::AudioData msg;
+      //     audio_common_msgs::AudioDataStamped stamped_msg;
+
+      //     msg.data.resize(_data_buffer_length);
+      //     memcpy(&msg.data[0], _data_buffer.data(), _data_buffer_length);
+      //     stamped_msg.audio = msg;
+
+      //     if( ros::Time::isSimTime() )
+      //     {
+      //       stamped_msg.header.stamp = ros::Time::now();
+      //     }
+      //     else
+      //     {
+      //       GstClockTime buffer_time = gst_element_get_base_time(server->_source)+GST_BUFFER_PTS(buffer);
+      //       stamped_msg.header.stamp.fromNSec(buffer_time);
+      //     }
+
+      //     server->publish(msg);
+      //     server->publishStamped(stamped_msg);
+      //     _data_buffer.clear();
+      //   }
+      //   return GST_FLOW_OK;
+      // }
+
       static GstFlowReturn onNewBuffer (GstAppSink *appsink, gpointer userData)
       {
-        audio_common_msgs::AudioData msg;
-        audio_common_msgs::AudioDataStamped stamped_msg;
-
         RosGstCapture *server = reinterpret_cast<RosGstCapture*>(userData);
         GstMapInfo map;
 
@@ -197,28 +271,42 @@ namespace audio_transport
 
         GstBuffer *buffer = gst_sample_get_buffer(sample);
 
-        if( ros::Time::isSimTime() )
-        {
-          stamped_msg.header.stamp = ros::Time::now();
-        }
-        else
-        {
-          GstClockTime buffer_time = gst_element_get_base_time(server->_source)+GST_BUFFER_PTS(buffer);
-          stamped_msg.header.stamp.fromNSec(buffer_time);
-        }
-
         gst_buffer_map(buffer, &map, GST_MAP_READ);
-        msg.data.resize( map.size );
 
-        memcpy( &msg.data[0], map.data, map.size );
-        stamped_msg.audio = msg;
+        _data_buffer.insert(_data_buffer.end(), map.data, map.data + map.size);
+        
+        // msg.data.resize( map.size );
+
+        // memcpy( &msg.data[0], map.data, map.size );
+        // stamped_msg.audio = msg;
 
         gst_buffer_unmap(buffer, &map);
         gst_sample_unref(sample);
+        
 
-        server->publish(msg);
-        server->publishStamped(stamped_msg);
+        if (_data_buffer.size() >= _data_buffer_length)
+        {
+          audio_common_msgs::AudioData msg;
+          audio_common_msgs::AudioDataStamped stamped_msg;
 
+          msg.data.resize(_data_buffer_length);
+          memcpy(&msg.data[0], _data_buffer.data(), _data_buffer_length);
+          stamped_msg.audio = msg;
+
+          if( ros::Time::isSimTime() )
+          {
+            stamped_msg.header.stamp = ros::Time::now();
+          }
+          else
+          {
+            GstClockTime buffer_time = gst_element_get_base_time(server->_source)+GST_BUFFER_PTS(buffer);
+            stamped_msg.header.stamp.fromNSec(buffer_time);
+          }
+
+          server->publish(msg);
+          server->publishStamped(stamped_msg);
+          _data_buffer.erase(_data_buffer.begin(), _data_buffer.begin() + _data_buffer_length);
+        }
         return GST_FLOW_OK;
       }
 
@@ -247,9 +335,11 @@ namespace audio_transport
 
       GstElement *_pipeline, *_source, *_filter, *_sink, *_convert, *_encode;
       GstBus *_bus;
-      int _bitrate, _channels, _depth, _sample_rate;
+      int _bitrate, _channels, _depth, _sample_rate, _pub_frequency;
       GMainLoop *_loop;
       std::string _format, _sample_format;
+
+       
   };
 }
 

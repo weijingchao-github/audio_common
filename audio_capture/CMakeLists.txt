@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 
 project(audio_capture)
 
-find_package(catkin REQUIRED COMPONENTS roscpp audio_common_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp rospy audio_common_msgs)
 
 find_package(PkgConfig)
 pkg_check_modules(GST1.0 gstreamer-1.0 REQUIRED)
@@ -22,3 +22,8 @@ install(TARGETS audio_capture
 
 install(DIRECTORY launch
    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+
+catkin_install_python(PROGRAMS
+   scripts/audio_process.py
+   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

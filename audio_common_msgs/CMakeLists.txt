@@ -12,6 +12,7 @@ add_message_files(DIRECTORY msg FILES
   AudioData.msg
   AudioDataStamped.msg
   AudioInfo.msg
+  ProcessedAudioDataStamped.msg
   )
 
 generate_messages(
