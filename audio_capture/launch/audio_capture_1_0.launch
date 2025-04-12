@@ -12,7 +12,7 @@
   <arg name="sample_format" default="S16LE"/>
   <arg name="ns" default="audio"/>
   <arg name="audio_topic" default="audio"/>
-  <!-- <arg name="pub_frequency" default="30"/> -->
+  <arg name="pub_frequency" default="30"/>
 
   <group ns="$(arg ns)">
     <node name="audio_capture" pkg="audio_capture" type="audio_capture" output="screen">
@@ -25,8 +25,7 @@
       <param name="depth" value="$(arg depth)"/>
       <param name="sample_rate" value="$(arg sample_rate)"/>
       <param name="sample_format" value="$(arg sample_format)"/>
-      <!-- <param name="pub_frequency" value="$(arg pub_frequency)"/> -->
-      <param name="pub_frequency" value="$(param /pub_frequency)"/>
+      <param name="pub_frequency" value="$(arg pub_frequency)"/>
     </node>
     <node name="audio_process" pkg="audio_capture" type="audio_process.py" output="screen" />
   </group>
