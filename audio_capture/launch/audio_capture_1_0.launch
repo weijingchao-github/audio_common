@@ -3,7 +3,7 @@
       the first number and the subdevice number as the second in a string
       like hw:1,0 -->
   <arg name="dst" default="appsink"/>
-  <arg name="device" default="hw:1,0"/>
+  <arg name="device" default="hw:2,0"/>
   <arg name="format" default="wave"/>
   <arg name="bitrate" default="128"/>
   <arg name="channels" default="2"/>
